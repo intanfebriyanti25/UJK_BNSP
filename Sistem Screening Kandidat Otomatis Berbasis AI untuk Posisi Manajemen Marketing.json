@@ -1,0 +1,498 @@
+{
+  "name": "Sistem Screening Kandidat Otomatis Berbasis AI untuk Posisi Manajemen Marketing",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Form Rekrutmen Posisi Manajemen Marketing",
+        "formDescription": "Harap isi form dibawah ini sesuai dengan ketentuan yang berlaku.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Nama Lengkap",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Email",
+              "fieldType": "email",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Pengalaman",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "< 1 tahun"
+                  },
+                  {
+                    "option": "1 - 3 tahun"
+                  },
+                  {
+                    "option": "3 > tahun"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Upload CV (PDF)",
+              "fieldType": "file",
+              "acceptFileTypes": "pdf",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.6,
+      "position": [
+        2224,
+        752
+      ],
+      "id": "6580cf67-49c0-402f-ab93-920f4932736b",
+      "name": "On form submission",
+      "webhookId": "158ebce9-32ac-43ce-8c7f-91202be48559"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "={{ $json.binary_key }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.2,
+      "position": [
+        2656,
+        752
+      ],
+      "id": "482b5945-13c0-44d1-b006-f8872daba9f2",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Kamu adalah Senior Recruiter berpengalaman. Evaluasi CV berikut untuk posisi\nManajemen Marketing. Fokus pada kompetensi: strategi pemasaran, digital marketing,\nanalisis data, komunikasi, dan kepemimpinan tim.\n\nGunakan rubrik penilaian (total 100):\n- Kesesuaian skill dengan posisi: 40\n- Pengalaman kerja/proyek: 30\n- Pendidikan: 15\n- Sertifikasi/pelatihan: 15\n\nBerikan skor objektif 0-100 berdasarkan rubrik di atas.\nAturan rekomendasi: \"Recommended\" jika skor 70 ke atas, selain itu \"Not Recommended\".\n\nHANYA berikan output JSON valid tanpa teks pengantar, tanpa penjelasan, dan tanpa\nmarkdown, dengan format persis seperti ini:\n{\n  \"candidate_name\": \"string\",\n  \"years_of_experience\": \"string\",\n  \"top_skills\": [\"skill1\", \"skill2\", \"skill3\"],\n  \"summary\": \"ringkasan profil maksimal 3 kalimat\",\n  \"score\": 0,\n  \"hiring_recommendation\": \"Recommended / Not Recommended\"\n}\n\nTeks CV:\n{{ $json.text }}",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        2864,
+        752
+      ],
+      "id": "836d3f06-5eca-47fc-9ef3-136eddde3458",
+      "name": "Basic LLM Chain",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        2864,
+        928
+      ],
+      "id": "884d53ed-37e8-40f2-9372-c9f1572bb38b",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "UAJRu4At7mX1xpZd",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => {\n  const raw = item.json.text || item.json.output || '';\n\n  try {\n    // 1. Bersihkan pembungkus markdown ```json ... ```\n    const cleaned = raw\n      .replace(/```json/gi, '')\n      .replace(/```/g, '')\n      .trim();\n\n    // 2. Parse string menjadi objek JSON\n    const parsedData = JSON.parse(cleaned);\n\n    // 3. Masukkan ke item.json agar bisa dipanggil node berikutnya\n    item.json.ai_name = parsedData.candidate_name;\n    item.json.ai_exp = parsedData.years_of_experience;\n    item.json.ai_skills = Array.isArray(parsedData.top_skills)\n      ? parsedData.top_skills.join(', ')\n      : parsedData.top_skills;\n    item.json.ai_summary = parsedData.summary;\n    item.json.ai_score = Number(parsedData.score) || 0;\n    item.json.ai_rec = parsedData.hiring_recommendation;\n\n  } catch (error) {\n    // Fallback: workflow tidak crash, error dicatat untuk debugging\n    item.json.error = error.message;\n    item.json.raw_output = raw;\n    item.json.ai_name = 'Gagal parsing';\n    item.json.ai_exp = '-';\n    item.json.ai_skills = '-';\n    item.json.ai_summary = 'Output AI bukan JSON valid. Cek raw_output.';\n    item.json.ai_score = 0;\n    item.json.ai_rec = '-';\n  }\n\n  return item;\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3168,
+        752
+      ],
+      "id": "7014df3b-1d1e-4295-ba4e-7270cf94b89e",
+      "name": "Mengubah JSON ke Object"
+    },
+    {
+      "parameters": {
+        "chatId": "1613990544",
+        "text": "=📋 SCREENING KANDIDAT BARU\nWaktu: {{ $('Mengkonversi ke Base64').item.json.submitted_at }}\nNama: {{ $json.ai_name }}\nEmail: {{ $('On form submission').item.json.Email }}\nPengalaman: {{ $json.ai_exp }}\nSkills: {{ $json.ai_skills }}\nScore: {{ $json.ai_score }}\nRekomendasi: {{ $json.ai_rec }}\nSummary: {{ $json.ai_summary }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3392,
+        752
+      ],
+      "id": "ea833ac1-5f91-4663-982b-577e90c77cb4",
+      "name": "Send a text message",
+      "webhookId": "15a76d98-d0ad-42b1-8d20-686c556c4ef7",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "telegramApi": {
+          "id": "vlo6J2cQbWLCK9XI",
+          "name": "n8n intan"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1mCfdeJngGynIXkV420cMkzjd59kMQs4XEtVfm46KQCw",
+          "mode": "list",
+          "cachedResultName": "Data Screening Kandidat",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1mCfdeJngGynIXkV420cMkzjd59kMQs4XEtVfm46KQCw/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Sheet1"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Waktu": "={{ $('Mengkonversi ke Base64').item.json.submitted_at }}",
+            "Nama": "={{ $('Mengubah JSON ke Object').item.json.ai_name }}",
+            "Email": "={{ $('On form submission').item.json.Email }}",
+            "Pengalaman": "={{ $('Mengubah JSON ke Object').item.json.ai_exp }}",
+            "Skills": "={{ $('Mengubah JSON ke Object').item.json.ai_skills }}",
+            "Skor": "={{ $('Mengubah JSON ke Object').item.json.ai_score }}",
+            "Rekomendasi": "={{ $('Mengubah JSON ke Object').item.json.ai_rec }}",
+            "Summary": "={{ $('Mengubah JSON ke Object').item.json.ai_summary }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Waktu",
+              "displayName": "Waktu",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Nama",
+              "displayName": "Nama",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Pengalaman",
+              "displayName": "Pengalaman",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Skills",
+              "displayName": "Skills",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Skor",
+              "displayName": "Skor",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Rekomendasi",
+              "displayName": "Rekomendasi",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Summary",
+              "displayName": "Summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        3616,
+        752
+      ],
+      "id": "49d67647-ae42-4474-bc01-0cc29602f30f",
+      "name": "Simpan ke Google Sheets",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "ZjOrbofk0FhxP84K",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c8fdf5e0-b4b2-45d2-b1e7-8af30a11d7c9",
+                    "leftValue": "={{ $('Mengubah JSON ke Object').item.json.ai_score }}",
+                    "rightValue": 70,
+                    "operator": {
+                      "type": "number",
+                      "operation": "gte"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Recommended (>=70)"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "e3c66a76-5b2c-49d3-9c70-577f13e47e1d",
+                    "leftValue": "={{ $('Mengubah JSON ke Object').item.json.ai_score }}",
+                    "rightValue": 70,
+                    "operator": {
+                      "type": "number",
+                      "operation": "lt"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Not Recommended (<70)"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        3840,
+        752
+      ],
+      "id": "09dd8def-337e-4461-8914-c37f88a53b5a",
+      "name": "Switch Berdasarkan Skor"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('On form submission').item.json.Email }}",
+        "subject": "={{ $('Mengubah JSON ke Object').item.json.ai_score >= 70 ? 'Undangan Wawancara - Posisi Manajemen Marketing' : 'Informasi Hasil Seleksi Administrasi' }}",
+        "emailType": "text",
+        "message": "={{ $('Mengubah JSON ke Object').item.json.ai_score >= 70 ? 'Halo ' + $('Mengubah JSON ke Object').item.json.ai_name + ',\\n\\nTerima kasih telah melamar posisi Manajemen Marketing. Berdasarkan hasil seleksi administrasi, kami mengundang Anda untuk mengikuti tahap wawancara. Tim HRD akan segera menghubungi Anda untuk menentukan jadwal.\\n\\nSalam hangat,\\nTim HRD' : 'Halo ' + $('Mengubah JSON ke Object').item.json.ai_name + ',\\n\\nTerima kasih atas minat dan waktu yang Anda luangkan untuk melamar posisi Manajemen Marketing. Setelah melalui proses seleksi administrasi, saat ini kami belum dapat melanjutkan lamaran Anda ke tahap berikutnya. Kami menyimpan data Anda dan berharap dapat bekerja sama di kesempatan lain.\\n\\nSalam hangat,\\nTim HRD' }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        4080,
+        752
+      ],
+      "id": "827c40c0-87f3-49de-8f5f-1197a93cb2f0",
+      "name": "Send Email ke Kandidat",
+      "webhookId": "b2febd17-132b-46b2-b090-747cfd054851",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "MGlflYQTggJcx40d",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const results = [];\n\nfor (const item of $input.all()) {\n  // Nama key binary bisa berbeda-beda, jadi ambil key pertama secara otomatis\n  const binaryKey = Object.keys(item.binary)[0];\n  const binaryData = item.binary[binaryKey];\n\n  // Ambil string Base64 mentah dan simpan metadata\n  item.json.cv_base64 = binaryData.data;\n  item.json.cv_filename = binaryData.fileName;\n  item.json.binary_key = binaryKey;\n\n  // Timestamp waktu lokal WIB (Luxon)\n  item.json.submitted_at =\n    DateTime.now().setZone('Asia/Jakarta').toFormat('dd-MM-yyyy HH:mm:ss') + ' WIB';\n\n  results.push(item);\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2448,
+        752
+      ],
+      "id": "af7dc67e-8cd6-46a5-b4bf-4f0ef6f7a863",
+      "name": "Mengkonversi ke Base64"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "Mengkonversi ke Base64",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Mengubah JSON ke Object",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mengubah JSON ke Object": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a text message": {
+      "main": [
+        [
+          {
+            "node": "Simpan ke Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simpan ke Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Switch Berdasarkan Skor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Berdasarkan Skor": {
+      "main": [
+        [
+          {
+            "node": "Send Email ke Kandidat",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Email ke Kandidat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mengkonversi ke Base64": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "1a6c6087-2830-4c0e-80d0-d0ee6a61bf50",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "dc96f10ae7dc95d3c138575ba243a0a167923dbcb524841d451aadf9135d5fb3"
+  },
+  "nodeGroups": [],
+  "id": "5rCM9JAtb8oqO7y1",
+  "tags": []
+}
